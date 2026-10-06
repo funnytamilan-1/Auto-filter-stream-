@@ -59,3 +59,64 @@ async def stream_disable_callback(client, query):
         return await query.answer("Stream link not found.", show_alert=True)
     await query.answer("Stream disabled.")
     await query.message.edit_text("🗑 <b>Stream link disabled.</b>", parse_mode="html")
+
+
+@Client.on_message(filters.command("streampanel") & filters.private)
+async def stream_panel(client, message):
+    if not _is_admin(message.from_user.id):
+        return await message.reply_text("⛔ Admin access required.")
+    total = await mydb.stream_links.count_documents({})
+    active = await mydb.stream_links.count_documents({"active": True})
+    pipeline = [{"$group": {"_id": None, "views": {"$sum": "$views"}}}]
+    agg = await mydb.stream_links.aggregate(pipeline).to_list(length=1)
+    views = int(agg[0].get("views", 0)) if agg else 0
+    recent = await mydb.stream_links.find({"active": True}).sort("created_at", -1).limit(5).to_list(length=5)
+    lines = ["🎬 <b>STREAM CONTROL CENTER</b>", "", f"🔗 Total links: <b>{total}</b>", f"🟢 Active: <b>{active}</b>", f"👁 Views: <b>{views}</b>", ""]
+    if recent:
+        lines.append("<b>Recent streams</b>")
+        for item in recent:
+            lines.append(f"• {str(item.get('title') or 'Video')[:45]} — {int(item.get('views', 0))} views")
+    else:
+        lines.append("No stream links yet.")
+    buttons = [
+        [InlineKeyboardButton("🔄 Refresh", callback_data="streampanel:refresh"),
+         InlineKeyboardButton("📋 Active Links", callback_data="streampanel:list")],
+        [InlineKeyboardButton("ℹ️ How to Generate", callback_data="streampanel:help")]
+    ]
+    await message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(buttons), parse_mode="html")
+
+
+@Client.on_callback_query(filters.regex(r"^streampanel:"))
+async def stream_panel_callback(client, query):
+    if not _is_admin(query.from_user.id):
+        return await query.answer("Admin only.", show_alert=True)
+    action = query.data.split(":", 1)[1]
+    if action == "help":
+        return await query.answer("Reply to a storage video/document and use /stream.", show_alert=True)
+    if action == "list":
+        items = await mydb.stream_links.find({"active": True}).sort("created_at", -1).limit(10).to_list(length=10)
+        if not items:
+            return await query.answer("No active stream links.", show_alert=True)
+        rows = []
+        base = (URL or "").rstrip("/") or "http://localhost:8080"
+        for item in items:
+            token = item.get("token")
+            title = str(item.get("title") or "Video")[:35]
+            rows.append([InlineKeyboardButton(f"🎬 {title}", url=f"{base}/watch/{token}")])
+        rows.append([InlineKeyboardButton("⬅️ Dashboard", callback_data="streampanel:refresh")])
+        await query.message.edit_reply_markup(InlineKeyboardMarkup(rows))
+        return await query.answer("Active links")
+    total = await mydb.stream_links.count_documents({})
+    active = await mydb.stream_links.count_documents({"active": True})
+    agg = await mydb.stream_links.aggregate([{"$group": {"_id": None, "views": {"$sum": "$views"}}]).to_list(length=1)
+    views = int(agg[0].get("views", 0)) if agg else 0
+    await query.message.edit_text(
+        f"🎬 <b>STREAM CONTROL CENTER</b>\n\n🔗 Total links: <b>{total}</b>\n🟢 Active: <b>{active}</b>\n👁 Views: <b>{views}</b>",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔄 Refresh", callback_data="streampanel:refresh"),
+             InlineKeyboardButton("📋 Active Links", callback_data="streampanel:list")],
+            [InlineKeyboardButton("ℹ️ How to Generate", callback_data="streampanel:help")]
+        ]),
+        parse_mode="html"
+    )
+    await query.answer("Refreshed")
