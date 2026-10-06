@@ -35,7 +35,7 @@ DELETE_CHANNELS = [int(dch) if id_pattern.search(dch) else dch for dch in enviro
 
 #this vars is for when heroku or koyeb acc get banned, then change this vars as your file to link bot name
 BIN_CHANNEL = int(environ.get('BIN_CHANNEL', ''))
-URL = environ.get('URL', '')
+URL = environ.get('URL', 'https://anime-dot-bot.onrender.com')
 
 # verify system vars
 IS_VERIFY = is_enabled('IS_VERIFY', True)
